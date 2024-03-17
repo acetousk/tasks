@@ -1,0 +1,181 @@
+<template>
+  <div class="full-width full-height" v-click-outside="clearActivitySelection"
+       @keydown.esc="() => clearActivitySelection()" tabindex="0">
+
+    <draggable :value="taskList" class="list-group"
+      ghost-class="ghost" handle=".handle" @start="dragging = true" @end="onDragEnd">
+      <div :id="`PACTION-${pSA.workEffortId}`" class="grid-wrapper list-group-item hover-container"
+           v-for="pSA in taskList" :key="pSA.workEffortId"
+           @click.stop="() => selectActivityForEdit(pSA.workEffortId)" @mouseover="hoverActivityId = pSA.workEffortId"
+           @mouseleave="hoverActivityId = null">
+<!--        <div class="row items-center" style="display: flex; align-items: center">-->
+<!--        <div class="row items-center">-->
+        <div>
+          <div class="row items-center">
+            <span class="show-on-hover">
+              <q-icon name="drag_indicator" color="grey-7" size="sm"
+                      class="handle cursor-pointer"></q-icon>
+            </span>
+          </div>
+        </div>
+        <div>
+          <span>
+            <template v-if="activeActivityId == pSA.workEffortId">
+              editing!
+<!--              <c-edit-activity ref="editActivity" :condition="(pSA.condition || '')"-->
+<!--                               :actors="pSA.actors.map(actor => ({ value: actor.actorId, label: actor.name })) || []"-->
+<!--                               :action="pSA.action || ''"-->
+<!--                               @save="(data) => { updateActivity(pSA.activityId, data, 'keyboard', pSA.willCopyOnWrite); }"-->
+<!--                               @close="() => selectNextActivity(pSA.activityId)"></c-edit-activity>-->
+            </template>
+
+            <template v-else>
+                <span class="">
+                  {{ pSA.workEffortName }}
+                </span>
+            </template>
+          </span>
+        </div>
+        <div>
+          <div class="row show-on-hover">
+            <q-space></q-space>
+            <q-btn flat dense icon="add">
+              <q-tooltip>Insert activity below</q-tooltip>
+            </q-btn>
+          </div>
+        </div>
+      </div>
+    </draggable>
+  </div>
+  </div>
+</template>
+
+<script>
+module.exports = {
+  mounted: function () {
+    Promise.all([this.fetchTasks()]).then(() => console.log(this.taskList)).catch((error) => console.log(error))
+  },
+  created() {
+    window.addEventListener('keydown', this.keyDownHandler)
+  },
+  destroyed() {
+    window.removeEventListener('keydown', this.keyDownHandler)
+  },
+  data() {
+    return {
+      taskList: [],
+      activeActivityId: null,
+      hoverActivityId: null,
+      dragging: false,
+    }
+  },
+  computed: {
+  },
+  watch: {
+  },
+  methods: {
+    fetchTasks(onSuccess = () => ({})) {
+      const vm = this
+      this.loading = true
+      return $.ajax({
+        type: 'GET',
+        url: '/apps/tasks/getTaskList',
+        dataType: 'json',
+        headers: {
+          Accept: 'application/json',
+        },
+        error: moqui.handleAjaxError,
+        success: function (responseObj, status, jqXHR) {
+          vm.taskList = responseObj?.taskList || null
+          onSuccess?.();
+        },
+        complete: this.handleMoquiResponse
+      })
+    },
+    selectActivityForEdit(activityId, force = false) {
+      if (!force) {
+        // prevent self deselect
+        if (this.activeActivityId == activityId)
+          return
+        // deselect on first click
+        if (this.activeActivityId) {
+          this.activeActivityId = null
+          return;
+        }
+      }
+      this.activeActivityId = activityId
+    },
+    clearActivitySelection() {
+      this.activeActivityId = null;
+    },
+    onDragEnd: function (e) {
+      const sourceProcessStoryActivity = this.processStoryActivityList[e.oldIndex]
+      this.moveActivityTo(sourceProcessStoryActivity.processStoryActivityId, e.newIndex + 1)
+      this.dragging = false
+    },
+    keyDownHandler(event) {
+      if (event.keyCode == 67 && event.ctrlKey) {
+        if (this.hoverActivityId || this.selectionActivityIds?.length) {
+          this.copyActivities(this.selectionActivityIds?.length ? this.selectionActivityIds :
+              [this.hoverActivityId])
+        }
+      } else if (event.keyCode == 88 && event.ctrlKey) {
+        if (this.hoverActivityId || this.selectionActivityIds?.length) {
+          this.cutActivities(this.selectionActivityIds?.length ? this.selectionActivityIds :
+              [this.hoverActivityId])
+        }
+      }
+      else if (event.keyCode == 86 && event.ctrlKey && event.shiftKey) {
+        if (this.hoverActivityId) {
+          this.showPasteDetailDialog = true
+          this.contextActivityId = this.hoverActivityId
+        }
+      }
+      else if (event.keyCode == 86 && event.ctrlKey) {
+        if (this.hoverActivityId) {
+          this.pasteClipboardItem(this.hoverActivityId)
+        }
+      }
+      else if (event.keyCode == 38 && event.ctrlKey) {
+        if (!this.activeActivityId) return;
+        this.selectPrevActivity(this.activeActivityId)
+      }
+      else if (event.keyCode == 40 && event.ctrlKey) {
+        if (!this.activeActivityId) return;
+        this.selectNextActivity(this.activeActivityId)
+      }
+    },
+    goPath: function goPath(path) { this.$root.setUrl(path); }
+  },
+}
+</script>
+
+<style>
+/* Row layout */
+.grid-wrapper {
+  display: grid;
+  grid-template-columns: 1fr 125px;
+}
+
+.grid-wrapper>div {
+  align-self: center;
+}
+
+/* drag & drop */
+.ghost {
+  opacity: 0.5;
+  background: #c8ebfb;
+}
+
+.show-on-hover {
+  display: none;
+}
+
+.hover-container:hover .show-on-hover {
+  display: block;
+}
+
+.list-group-item {
+  min-height: 40px;
+}
+</style>
