@@ -8,8 +8,6 @@
            v-for="pSA in taskList" :key="pSA.workEffortId"
            @click.stop="() => selectActivityForEdit(pSA.workEffortId)" @mouseover="hoverActivityId = pSA.workEffortId"
            @mouseleave="hoverActivityId = null">
-<!--        <div class="row items-center" style="display: flex; align-items: center">-->
-<!--        <div class="row items-center">-->
         <div>
           <div class="row items-center">
             <span class="show-on-hover">
@@ -21,7 +19,9 @@
         <div>
           <span>
             <template v-if="activeActivityId == pSA.workEffortId">
-              editing!
+              <q-form ref="editWorkEffortForm" @submit-prevent="onSubmit">
+                <q-input v-model="pSA.workEffortName" dense autofocus @keydown.enter.prevent="(e) => ($refs.editWorkEffortForm.submit(e))"></q-input>
+              </q-form>
 <!--              <c-edit-activity ref="editActivity" :condition="(pSA.condition || '')"-->
 <!--                               :actors="pSA.actors.map(actor => ({ value: actor.actorId, label: actor.name })) || []"-->
 <!--                               :action="pSA.action || ''"-->
@@ -47,19 +47,35 @@
       </div>
     </draggable>
   </div>
-  </div>
 </template>
 
 <script>
 module.exports = {
   mounted: function () {
-    Promise.all([this.fetchTasks()]).then(() => console.log(this.taskList)).catch((error) => console.log(error))
+    Promise.all([this.fetchTasks()]).then().catch((error) => console.log(error))
   },
   created() {
     window.addEventListener('keydown', this.keyDownHandler)
   },
   destroyed() {
     window.removeEventListener('keydown', this.keyDownHandler)
+  },
+  directives: {
+    'click-outside': {
+      bind: function (el, binding, vnode) {
+        el.clickOutsideEvent = function (event) {
+          // check that click was outside the el and his children
+          if (!(el == event.target || el.contains(event.target))) {
+            // if it did, call method provided in attribute value
+            vnode.context[binding.expression]?.(event);
+          }
+        };
+        document.body.addEventListener('click', el.clickOutsideEvent)
+      },
+      unbind: function (el) {
+        document.body.removeEventListener('click', el.clickOutsideEvent)
+      },
+    }
   },
   data() {
     return {
@@ -74,6 +90,13 @@ module.exports = {
   watch: {
   },
   methods: {
+    onSubmit(){
+      if (this.dirty){
+        this._updateWorkEffort(pSA.workEffortId, data, 'keyboard', pSA.willCopyOnWrite)
+      }else{
+        this.$emit('close')
+      }
+    },
     fetchTasks(onSuccess = () => ({})) {
       const vm = this
       this.loading = true
@@ -90,6 +113,37 @@ module.exports = {
           onSuccess?.();
         },
         complete: this.handleMoquiResponse
+      })
+    },
+    _updateWorkEffort(workEffortId, workEffortName, source, ignoreCopyOnWrite) {
+      const vm = this
+      if (!workEffortId) return;
+
+      this.loading = true
+      return $.ajax({
+        type: 'POST',
+        url: '/qapps/tasks/updateTask',
+        data: {
+          workEffortId: workEffortId,
+          workEffortName: workEffortName,
+        },
+        dataType: 'json',
+        headers: {
+          Accept: 'application/json',
+          'X-CSRF-Token': this.$root.moquiSessionToken,
+        },
+        error: moqui.handleAjaxError,
+        success: function (responseObj, status, jqXHR) {
+          vm.fetchProcessStoryActivities().then(() => {
+            if (source == 'keyboard') {
+              vm.selectNextActivity(activityId)
+            }
+            vm.releaseActivityFromUpdate();
+          });
+        },
+        complete: function () {
+          vm.loading = false
+        },
       })
     },
     selectActivityForEdit(activityId, force = false) {
@@ -154,7 +208,7 @@ module.exports = {
 /* Row layout */
 .grid-wrapper {
   display: grid;
-  grid-template-columns: 1fr 125px;
+  grid-template-columns: 65px 1fr 125px;
 }
 
 .grid-wrapper>div {
